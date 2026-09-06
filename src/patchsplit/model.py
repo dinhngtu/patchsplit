@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
 from dataclasses import dataclass, field
 from hashlib import sha256
 
@@ -128,11 +127,3 @@ class Resolution:
         if self.owner is not None:
             return self.owner
         return Category.MIXED if self.mixed else Category.UNRESOLVED
-
-
-def exact_bytes_hash(parts: Iterable[bytes]) -> str:
-    digest = sha256()
-    for part in parts:
-        digest.update(len(part).to_bytes(8, "big"))
-        digest.update(part)
-    return digest.hexdigest()
