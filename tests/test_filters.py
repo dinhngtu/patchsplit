@@ -1,0 +1,108 @@
+from __future__ import annotations
+
+import unittest
+
+from patchsplit.atomize import suggest_line_slices
+from patchsplit.categories import Category, MatchStrength
+from patchsplit.filters import FilterSet, builtin_filters
+from patchsplit.filters.base import ChangeFilter
+from patchsplit.model import ChangeLine, ChangeUnit, Evidence
+from patchsplit.resolve import resolve
+
+
+def change(path: str, added: str, section: str = "") -> ChangeUnit:
+    raw = added.encode()
+    return ChangeUnit(
+        path=path,
+        status="M",
+        old_blob_id="1" * 40,
+        new_blob_id="2" * 40,
+        old_start=1,
+        old_lines=0,
+        new_start=1,
+        new_lines=1,
+        header="@@ -1,0 +1 @@",
+        section=section,
+        lines=(ChangeLine("+", raw, -1, 1),),
+        patch_data=raw,
+    )
+
+
+class UiFilterTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.filters = FilterSet(builtin_filters())
+
+    def classify(self, item: ChangeUnit):
+        return resolve(self.filters.classify(item))
+
+    def test_mixed_settings_hunk_preserves_both_purposes(self) -> None:
+        result = self.classify(
+            change(
+                "CPP/7zip/UI/FileManager/RegistryUtils.cpp",
+                "WantArcHistory(); WantLowercaseHashes();",
+            )
+        )
+        categories = {candidate.category for candidate in result.candidates}
+        self.assertIn(Category.UI_HISTORY_SETTINGS, categories)
+        self.assertIn(Category.UI_LOWERCASE_HASHES, categories)
+        self.assertTrue(result.mixed)
+        self.assertIsNone(result.owner)
+
+    def test_codec_level_hunk_is_mixed(self) -> None:
+        result = self.classify(
+            change(
+                "CPP/7zip/UI/GUI/CompressDialog.cpp",
+                "if (id == kZSTD) LevelsMask = g_Levels[id];",
+            )
+        )
+        categories = {candidate.category for candidate in result.candidates}
+        self.assertIn(Category.UI_EXTRA_CODECS, categories)
+        self.assertIn(Category.UI_COMPRESSION_LEVELS, categories)
+        self.assertTrue(result.mixed)
+
+    def test_console_hunks_have_distinct_owners(self) -> None:
+        result = self.classify(
+            change(
+                "CPP/7zip/UI/Console/Main.cpp",
+                'if (command == "--version") return 0;',
+                "int Main2()",
+            )
+        )
+        self.assertEqual(result.owner, Category.UI_CONSOLE_VERSION_COMMAND)
+
+    def test_line_slices_separate_mixed_settings(self) -> None:
+        item = ChangeUnit(
+            path="CPP/7zip/UI/FileManager/RegistryUtils.cpp",
+            status="M",
+            old_blob_id="1" * 40,
+            new_blob_id="2" * 40,
+            old_start=1,
+            old_lines=0,
+            new_start=1,
+            new_lines=2,
+            header="@@ -1,0 +1,2 @@",
+            section="",
+            lines=(
+                ChangeLine("+", b"bool WantArcHistory();\n", -1, 1),
+                ChangeLine("+", b"bool WantLowercaseHashes();\n", -1, 2),
+            ),
+            patch_data=b"",
+        )
+        slices = suggest_line_slices(item, self.filters)
+        self.assertEqual(len(slices), 2)
+        self.assertEqual(slices[0].categories, (Category.UI_HISTORY_SETTINGS,))
+        self.assertEqual(slices[1].categories, (Category.UI_LOWERCASE_HASHES,))
+
+    def test_filter_set_rejects_ad_hoc_category_strings(self) -> None:
+        class InvalidFilter(ChangeFilter):
+            name = "invalid"
+
+            def classify(self, change):
+                yield Evidence("ui.typo", MatchStrength.STRONG, "test", self.name)  # type:ignore
+
+        with self.assertRaisesRegex(TypeError, "unregistered category"):
+            FilterSet((InvalidFilter(),)).classify(change("x.cpp", "x"))
+
+
+if __name__ == "__main__":
+    unittest.main()
