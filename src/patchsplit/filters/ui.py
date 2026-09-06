@@ -88,7 +88,7 @@ class UiPurposeFilter(ChangeFilter):
             ),
             (
                 Category.UI_EXTRA_CODECS,
-                r"k(?:FLZMA2|ZSTD|BROTLI|LZ4|LZ5|LIZARD(?:_M[1-4])?)\b|\bFastLzma2\b|\bBrotli\b|\bLizard\b|\bLZ[45]\b|\bzstd\b",
+                r"k(?:FLZMA2|ZSTD|BROTLI|LZ4|LZ5|LIZARD(?:_M[1-4])?)\b|\bFastLzma2\b|\bBrotli\b|\bLizard\b|\bLZ[45]\b|(?<!mcmilk/7-Zip-)\bzstd\b",
                 MatchStrength.STRONG,
                 "additional codec exposed by the UI",
             ),

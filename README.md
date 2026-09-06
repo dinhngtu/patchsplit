@@ -14,7 +14,6 @@ can classify.
 git -C ..\7-zip-zstd diff --binary --full-index --no-ext-diff --output=7zzs.patch 2e90379671c9..adb9ceeecd0c -- Asm C CPP
 git -C ..\7zip am --abort; git -C ..\7zip reset --hard 26.03; git -C ..\7zip clean -fxd
 git -C ..\7zip rm -- CPP/Common/Xxh64Reg.cpp
-git -C ..\7zip apply --check --index --whitespace=nowarn --exclude=CPP/Common/Xxh64Reg.cpp ..\7-zip-zstd\7zzs.patch
 git -C ..\7zip apply --index --whitespace=nowarn --exclude=CPP/Common/Xxh64Reg.cpp ..\7-zip-zstd\7zzs.patch
 ```
 
