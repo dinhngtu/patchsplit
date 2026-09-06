@@ -23,6 +23,11 @@ class GeneralFeatureFilter(ChangeFilter):
     def __init__(self) -> None:
         specs = (
             (
+                Category.CODEC_MT_SUPPORT,
+                r"ParseMtProp|kNumThreads|SetNumberOfThreads",
+                MatchStrength.STRONG,
+            ),
+            (
                 Category.WORKFLOW_OPEN_TARGET_FOLDER,
                 r"OpnTrgFold|BrowseToPath|FirstExtractedPath",
                 MatchStrength.STRONG,
@@ -49,7 +54,7 @@ class GeneralFeatureFilter(ChangeFilter):
             ),
             (
                 Category.CODEC_THREAD_PROPERTIES,
-                r"ParseMtProp|kNumThreads|numThreads",
+                r"\bnumThreads\b",
                 MatchStrength.WEAK,
             ),
             (
@@ -74,6 +79,23 @@ class GeneralFeatureFilter(ChangeFilter):
                 continue
             if rule.pattern.search(text):
                 yield evidence(self, rule.category, rule.strength, rule.reason)
+
+
+class CoderPropertyFilter(ChangeFilter):
+    """Own changes to the canonical coder-property ID table."""
+
+    name = "coder-properties"
+    _path = "CPP/7zip/ICoder.h"
+    _section = "namespace NCoderPropID"
+
+    def classify(self, change: ChangeUnit) -> Iterable[Evidence]:
+        if change.path == self._path and change.section == self._section:
+            yield evidence(
+                self,
+                Category.CORE_METHOD_PROPERTIES,
+                MatchStrength.EXACT,
+                "coder-property declaration table",
+            )
 
 
 class WhitespaceOnlyFilter(ChangeFilter):

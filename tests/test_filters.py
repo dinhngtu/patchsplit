@@ -88,7 +88,7 @@ class UiFilterTests(unittest.TestCase):
         self.assertEqual(result.owner, Category.BUILD_BUNDLES)
         self.assertEqual(result.candidates[0].strength, MatchStrength.EXACT)
 
-    def test_codec_level_hunk_is_mixed(self) -> None:
+    def test_level_mask_owns_hunk_that_also_names_an_extra_codec(self) -> None:
         result = self.classify(
             change(
                 "CPP/7zip/UI/GUI/CompressDialog.cpp",
@@ -98,7 +98,34 @@ class UiFilterTests(unittest.TestCase):
         categories = {candidate.category for candidate in result.candidates}
         self.assertIn(Category.UI_EXTRA_CODECS, categories)
         self.assertIn(Category.UI_COMPRESSION_LEVELS, categories)
-        self.assertTrue(result.mixed)
+        self.assertFalse(result.mixed)
+        self.assertEqual(result.owner, Category.UI_COMPRESSION_LEVELS)
+
+    def test_lizard_adapter_with_thread_api_is_mt_support(self) -> None:
+        result = self.classify(
+            change(
+                "CPP/7zip/Compress/LizardDecoder.cpp",
+                "case NCoderPropID::kNumThreads: SetNumberOfThreads(v);",
+            )
+        )
+        self.assertEqual(result.owner, Category.CODEC_MT_SUPPORT)
+
+    def test_generic_thread_variable_remains_weak(self) -> None:
+        result = self.classify(change("CPP/example.cpp", "UInt32 numThreads;"))
+        self.assertIsNone(result.owner)
+        self.assertFalse(result.mixed)
+        self.assertEqual(result.candidates[0].strength, MatchStrength.WEAK)
+
+    def test_icoder_property_table_has_exact_core_property_ownership(self) -> None:
+        result = self.classify(
+            change(
+                "CPP/7zip/ICoder.h",
+                "kLdmSearchLength, // Zstd long-distance matching property",
+                "namespace NCoderPropID",
+            )
+        )
+        self.assertEqual(result.owner, Category.CORE_METHOD_PROPERTIES)
+        self.assertEqual(result.candidates[0].strength, MatchStrength.EXACT)
 
     def test_console_hunks_have_distinct_owners(self) -> None:
         result = self.classify(

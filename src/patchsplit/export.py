@@ -23,14 +23,14 @@ def _ordered_labels(labels: list[Category]) -> list[Category]:
     return sorted(labels, key=positions.__getitem__)
 
 
-def _mail_prologue(label: Category, number: int, total: int) -> bytes:
+def _mail_prologue(subject: str, number: int, total: int) -> bytes:
     width = max(2, len(str(total)))
     sequence = f"{number:0{width}d}/{total:0{width}d}"
     return (
         f"From {'0' * 40} Mon Sep 17 00:00:00 2001\n"
         "From: patchsplit <patchsplit@localhost>\n"
         "Date: Thu, 1 Jan 1970 00:00:00 +0000\n"
-        f"Subject: [PATCH {sequence}] {label.value}\n"
+        f"Subject: [PATCH {sequence}] {subject}\n"
         "\n"
         "---\n"
     ).encode()
@@ -103,6 +103,37 @@ def _fix_missing_newlines(lines: list[bytes]) -> bytes:
     return bytes(output)
 
 
+def _case_replacement_deletions(
+    by_path: dict[str, list[tuple[ChangeUnit, Category]]],
+) -> dict[Category, set[str]]:
+    """Find deletes that must precede case-only replacement adds.
+
+    Git applies a patch atomically and, on a case-insensitive filesystem,
+    rejects a patch that deletes ``name`` while adding ``NAME``.  Splitting the
+    deletion into a preceding commit avoids that working-tree collision.
+    """
+
+    folded_paths: dict[str, list[str]] = defaultdict(list)
+    for path in by_path:
+        folded_paths[path.casefold()].append(path)
+
+    result: dict[Category, set[str]] = defaultdict(set)
+    for paths in folded_paths.values():
+        if len(paths) != 2:
+            continue
+        deleted = [path for path in paths if by_path[path][0][0].status == "D"]
+        added = [path for path in paths if by_path[path][0][0].status == "A"]
+        if len(deleted) != 1 or len(added) != 1:
+            continue
+
+        delete_labels = {label for _, label in by_path[deleted[0]]}
+        add_labels = {label for _, label in by_path[added[0]]}
+        if len(delete_labels) == 1 and delete_labels == add_labels:
+            result[next(iter(delete_labels))].add(deleted[0])
+
+    return result
+
+
 def _file_diff(
     path: str,
     before: bytes,
@@ -158,6 +189,7 @@ def write_patch_series(inventory: Inventory, output: str | Path) -> tuple[Path, 
         if label not in labels:
             labels.append(label)
     labels = _ordered_labels(labels)
+    case_replacement_deletions = _case_replacement_deletions(by_path)
 
     bases = {
         path: _blob_bytes(repo, changes[0][0].old_blob_id) for path, changes in by_path.items()
@@ -175,12 +207,37 @@ def write_patch_series(inventory: Inventory, output: str | Path) -> tuple[Path, 
 
     written: list[Path] = []
     included: set[Category] = set()
-    total = len(labels)
-    for number, label in enumerate(labels, 1):
+    total = len(labels) + len(case_replacement_deletions)
+    number = 0
+    for label in labels:
+        prepared_deletions = case_replacement_deletions.get(label, set())
+        if prepared_deletions:
+            number += 1
+            patch = bytearray(
+                _mail_prologue(f"{label.value}: remove case-conflicting paths", number, total)
+            )
+            for path in sorted(prepared_deletions):
+                patch.extend(
+                    _file_diff(
+                        path,
+                        bases[path],
+                        b"",
+                        before_exists=True,
+                        after_exists=False,
+                    )
+                )
+            safe_label = re.sub(r"[^A-Za-z0-9._-]+", "-", label.value).strip("-")
+            path = destination / f"{number:04d}-{safe_label}.case-delete.patch"
+            path.write_bytes(bytes(patch))
+            written.append(path)
+
+        number += 1
         next_included = included | {label}
-        patch = bytearray(_mail_prologue(label, number, total))
+        patch = bytearray(_mail_prologue(label.value, number, total))
         for path, changes in by_path.items():
             if not any(change_label == label for _, change_label in changes):
+                continue
+            if path in prepared_deletions:
                 continue
             status = changes[0][0].status
             before = _snapshot(bases[path], changes, included)

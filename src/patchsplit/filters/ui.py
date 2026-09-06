@@ -45,6 +45,12 @@ class UiPurposeFilter(ChangeFilter):
     def __init__(self) -> None:
         specs = (
             (
+                Category.UI_COMPRESSION_LEVELS,
+                r"Levels(?:Mask|Start|End)(?:ByMask)?",
+                MatchStrength.EXACT,
+                "compression-level range or mask state",
+            ),
+            (
                 Category.UI_SETTINGS,
                 (_HISTORY_PATTERN, _LOWERCASE_HASH_PATTERN),
                 MatchStrength.EXACT,

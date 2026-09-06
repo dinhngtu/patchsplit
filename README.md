@@ -11,10 +11,18 @@ can classify.
 ## Generating and applying patches
 
 ```powershell
-git -C ..\7-zip-zstd diff <pre-merge>..<post-merge> -- Asm C CPP > 7zzs.patch
-git -C ..\7zip apply --reject ..\7-zip-zstd\7zzs.patch
-git -C ..\7zip add .
+git -C ..\7-zip-zstd diff --binary --full-index --no-ext-diff --output=7zzs.patch 2e90379671c9..adb9ceeecd0c -- Asm C CPP
+git -C ..\7zip am --abort; git -C ..\7zip reset --hard 26.03; git -C ..\7zip clean -fxd
+git -C ..\7zip rm -- CPP/Common/Xxh64Reg.cpp
+git -C ..\7zip apply --check --index --whitespace=nowarn --exclude=CPP/Common/Xxh64Reg.cpp ..\7-zip-zstd\7zzs.patch
+git -C ..\7zip apply --index --whitespace=nowarn --exclude=CPP/Common/Xxh64Reg.cpp ..\7-zip-zstd\7zzs.patch
 ```
+
+The explicit `git rm` handles the case-only
+`Xxh64Reg.cpp` -> `XXH64Reg.cpp` replacement on case-insensitive filesystems.
+The matching deletion is excluded from `git apply` because it is already
+staged; the patch still creates `CPP/Common/XXH64Reg.cpp` with its intended
+contents.
 
 ## Running the tool
 
@@ -43,11 +51,15 @@ uv run patchsplit -C ..\7zip --output series.jsonl --patch-dir patches
 The directory contains numbered `.patch` files and a `series` file specifying
 their application order. Each patch is generated against the cumulative
 previous stage, allowing different categories to modify the same file.
+On case-insensitive filesystems, a case-only delete/add replacement is emitted
+as a small deletion patch immediately before its category patch. This prevents
+Git's preflight check from treating the differently-cased destination as an
+existing file.
 
 Apply the series from the target repository:
 
 ```powershell
-git -C ..\7zip reset --hard 26.03
+git -C ..\7zip am --abort; git -C ..\7zip reset --hard 26.03; git -C ..\7zip clean -fxd
 Get-Content ..\patchsplit\patches\series | ForEach-Object {
   $patch = Get-ChildItem (Join-Path ..\patchsplit\patches $_)
   git -C ..\7zip am $patch
@@ -56,10 +68,8 @@ Get-Content ..\patchsplit\patches\series | ForEach-Object {
 ```
 
 Category declaration order in `categories.py` is the patch-series order;
-`PATCH_SERIES_ORDER` is generated directly from the enum. The `unresolved`,
-`cleanup.whitespace-only`, and `mixed` categories are last.
-Every generated patch has a deterministic mail prologue and a numbered subject
-suitable for `git am`.
+`PATCH_SERIES_ORDER` is generated directly from the enum. Every generated patch
+has a deterministic mail prologue and a numbered subject suitable for `git -C ..\7zip am`.
 
 Mixed and unresolved hunks are preserved whole in correspondingly named
 patches rather than being omitted.
