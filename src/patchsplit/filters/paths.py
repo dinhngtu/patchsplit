@@ -26,6 +26,7 @@ class PathOwnershipFilter(ChangeFilter):
             (r"^C/(?:lizard|lz4|lz5)/", Category.VENDOR_LZ_FAMILY, MatchStrength.EXACT),
             (r"^C/fast-lzma2/", Category.VENDOR_FAST_LZMA2, MatchStrength.EXACT),
             (r"^C/zstdmt/", Category.CODEC_MT_SUPPORT, MatchStrength.EXACT),
+            (r"^C/ZstdDec\.[ch]$", Category.CODEC_UPSTREAM_ZSTD_DECODER, MatchStrength.EXACT),
             (r"^C/hashes/", Category.HASH_BACKENDS, MatchStrength.EXACT),
             (r"^CPP/7zip/Compress/", Category.CODEC_ADAPTERS, MatchStrength.FALLBACK),
             (r"^CPP/7zip/Archive/", Category.ARCHIVE_FORMATS, MatchStrength.FALLBACK),

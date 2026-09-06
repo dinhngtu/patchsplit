@@ -52,11 +52,15 @@ Before adding a category:
    reviewable patch.
 2. Prefer a purpose such as `ui.compression-levels` over a filename or class
    name.
-3. Use a dotted, lowercase external value. The prefix identifies the broad
-   subsystem; the remainder identifies the purpose.
+3. Use a dotted, lowercase external value for feature categories. The prefix
+   identifies the broad subsystem; the remainder identifies the purpose.
+   Resolution-state categories retain the stable `unresolved` and `mixed`
+   labels.
 4. Add the enum member before changing filters or manifests.
 5. Treat the enum value as stable persisted data. Renaming the Python member is
    safe; changing its value requires migrating saved inventories and overrides.
+6. Place it at the intended position in the enum. `PATCH_SERIES_ORDER` is
+   generated from declaration order and is the canonical patch export order.
 
 Do not create a category merely because a new keyword appeared. A category
 should correspond to a patch that could be reviewed, reordered, or omitted as

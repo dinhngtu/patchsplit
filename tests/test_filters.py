@@ -35,7 +35,7 @@ class UiFilterTests(unittest.TestCase):
     def classify(self, item: ChangeUnit):
         return resolve(self.filters.classify(item))
 
-    def test_mixed_settings_hunk_preserves_both_purposes(self) -> None:
+    def test_combined_history_and_hash_settings_get_their_own_owner(self) -> None:
         result = self.classify(
             change(
                 "CPP/7zip/UI/FileManager/RegistryUtils.cpp",
@@ -45,8 +45,48 @@ class UiFilterTests(unittest.TestCase):
         categories = {candidate.category for candidate in result.candidates}
         self.assertIn(Category.UI_HISTORY_SETTINGS, categories)
         self.assertIn(Category.UI_LOWERCASE_HASHES, categories)
-        self.assertTrue(result.mixed)
-        self.assertIsNone(result.owner)
+        self.assertIn(Category.UI_SETTINGS, categories)
+        self.assertFalse(result.mixed)
+        self.assertEqual(result.owner, Category.UI_SETTINGS)
+
+    def test_upstream_zstd_decoder_path_has_exact_ownership(self) -> None:
+        result = self.classify(change("C/ZstdDec.c", "removed decoder"))
+        self.assertEqual(result.owner, Category.CODEC_UPSTREAM_ZSTD_DECODER)
+        self.assertEqual(result.candidates[0].strength, MatchStrength.EXACT)
+
+    def test_similarly_named_zstd_adapter_is_not_upstream_decoder(self) -> None:
+        result = self.classify(change("CPP/7zip/Compress/ZstdDecoder.cpp", "adapter change"))
+        self.assertEqual(result.owner, Category.CODEC_ADAPTERS)
+        self.assertNotIn(
+            Category.CODEC_UPSTREAM_ZSTD_DECODER,
+            {candidate.category for candidate in result.candidates},
+        )
+
+    def test_version_metadata_path_is_zs_branding(self) -> None:
+        result = self.classify(change("C/7zVersion.h", '#define MY_DATE "2026-09-05"'))
+        self.assertEqual(result.owner, Category.ZS_BRANDING)
+        self.assertEqual(result.candidates[0].strength, MatchStrength.EXACT)
+
+    def test_installer_product_name_is_zs_branding(self) -> None:
+        result = self.classify(
+            change(
+                "C/Util/7zipInstall/resource.rc",
+                'MY_VERSION_INFO(MY_VFT_APP, "7-Zip Installer ZS")',
+            )
+        )
+        self.assertEqual(result.owner, Category.ZS_BRANDING)
+
+    def test_plain_upstream_product_name_is_not_zs_branding(self) -> None:
+        result = self.classify(change("C/example.c", 'const char *name = "7-Zip";'))
+        self.assertNotIn(
+            Category.ZS_BRANDING,
+            {candidate.category for candidate in result.candidates},
+        )
+
+    def test_bundle_makefile_path_overrides_build_file_hint(self) -> None:
+        result = self.classify(change("CPP/7zip/Bundles/SFXWin/makefile", r"$O\MyWindows.obj"))
+        self.assertEqual(result.owner, Category.BUILD_BUNDLES)
+        self.assertEqual(result.candidates[0].strength, MatchStrength.EXACT)
 
     def test_codec_level_hunk_is_mixed(self) -> None:
         result = self.classify(

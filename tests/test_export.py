@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pygit2
 
-from patchsplit.categories import Category, MatchStrength
-from patchsplit.export import write_patch_series
+from patchsplit.categories import PATCH_SERIES_ORDER, Category, MatchStrength
+from patchsplit.export import _ordered_labels, write_patch_series
 from patchsplit.filters import FilterSet
 from patchsplit.filters.base import ChangeFilter, evidence
 from patchsplit.inventory import build_inventory
@@ -36,6 +36,29 @@ class PurposeFilter(ChangeFilter):
 
 
 class PatchExportTests(unittest.TestCase):
+    def test_patch_order_contains_every_category_once(self) -> None:
+        self.assertEqual(PATCH_SERIES_ORDER, list(Category))
+
+    def test_review_buckets_are_ordered_at_the_end(self) -> None:
+        self.assertEqual(
+            _ordered_labels(
+                [
+                    Category.UNRESOLVED,
+                    Category.VENDOR_ZSTD,
+                    Category.MIXED,
+                    Category.CLEANUP_WHITESPACE_ONLY,
+                    Category.BUILD_BUNDLES,
+                ]
+            ),
+            [
+                Category.VENDOR_ZSTD,
+                Category.BUILD_BUNDLES,
+                Category.UNRESOLVED,
+                Category.CLEANUP_WHITESPACE_ONLY,
+                Category.MIXED,
+            ],
+        )
+
     def test_exported_series_applies_to_base_and_reconstructs_target(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -43,6 +66,8 @@ class PatchExportTests(unittest.TestCase):
             # Keep the fixture byte-exact regardless of the machine's global
             # Git checkout settings (notably core.autocrlf=true on Windows).
             repo.config["core.autocrlf"] = "false"
+            repo.config["user.name"] = "Test Committer"
+            repo.config["user.email"] = "committer@example.invalid"
             source = root / "sample.txt"
             source.write_bytes(b"top\nold alpha\nmiddle\nold beta\nbottom\n")
             repo.index.add("sample.txt")
@@ -68,17 +93,20 @@ class PatchExportTests(unittest.TestCase):
                 (output / "series").read_text(encoding="utf-8").splitlines(),
                 [patch.name for patch in patches],
             )
+            self.assertTrue(
+                patches[0]
+                .read_text(encoding="utf-8")
+                .startswith("From " + "0" * 40 + " Mon Sep 17 00:00:00 2001\n")
+            )
+            self.assertIn(
+                "Subject: [PATCH 01/02] ui.lowercase-hashes\n",
+                patches[0].read_text(encoding="utf-8"),
+            )
 
             repo.reset(commit, pygit2.GIT_RESET_HARD)  # type: ignore
             for patch in patches:
                 subprocess.run(
-                    ["git", "apply", "--check", str(patch)],
-                    cwd=root,
-                    check=True,
-                    capture_output=True,
-                )
-                subprocess.run(
-                    ["git", "apply", str(patch)],
+                    ["git", "am", str(patch)],
                     cwd=root,
                     check=True,
                     capture_output=True,

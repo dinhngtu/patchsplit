@@ -7,6 +7,7 @@ from pathlib import Path
 import pygit2
 
 from .atomize import LineSlice, suggest_line_slices
+from .categories import Category
 from .diff_source import collect_patches, iter_units
 from .filters import FilterSet, builtin_filters
 from .model import ChangeUnit, Resolution
@@ -35,13 +36,10 @@ class Inventory:
 
     @property
     def unresolved_count(self) -> int:
-        return sum(item.resolution.owner is None for item in self.items)
+        return sum(item.resolution.patch_category is Category.UNRESOLVED for item in self.items)
 
     def owner_counts(self) -> Counter[str]:
-        return Counter(
-            item.resolution.owner.value if item.resolution.owner else "<unresolved>"
-            for item in self.items
-        )
+        return Counter(item.resolution.patch_category.value for item in self.items)
 
 
 def build_inventory(

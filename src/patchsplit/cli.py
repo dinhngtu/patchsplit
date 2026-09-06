@@ -66,7 +66,7 @@ def main(argv: list[str] | None = None) -> int:
         source=args.source,
     )
     exported = ()
-    if args.output is not None or args.patch_dir is None:
+    if args.output is not None:
         write_inventory(inventory, args.output)
     if args.patch_dir is not None:
         exported = write_patch_series(inventory, args.patch_dir)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .base import ChangeFilter, FilterSet, load_filter_module
+from .branding import ZsBrandingFilter
 from .general import GeneralFeatureFilter, WhitespaceOnlyFilter
 from .paths import BuildFileFilter, PathOwnershipFilter
 from .ui import ConsoleMainFilter, UiPurposeFilter
@@ -11,6 +12,7 @@ def builtin_filters() -> tuple[ChangeFilter, ...]:
         PathOwnershipFilter(),
         BuildFileFilter(),
         GeneralFeatureFilter(),
+        ZsBrandingFilter(),
         WhitespaceOnlyFilter(),
         UiPurposeFilter(),
         ConsoleMainFilter(),

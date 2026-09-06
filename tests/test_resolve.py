@@ -31,6 +31,7 @@ class ResolverTests(unittest.TestCase):
         )
         self.assertIsNone(result.owner)
         self.assertTrue(result.mixed)
+        self.assertEqual(result.patch_category, Category.MIXED)
 
     def test_exact_match_owns_over_strong_match(self) -> None:
         result = resolve(
@@ -51,6 +52,7 @@ class ResolverTests(unittest.TestCase):
         )
         self.assertIsNone(result.owner)
         self.assertFalse(result.mixed)
+        self.assertEqual(result.patch_category, Category.UNRESOLVED)
 
     def test_lone_fallback_owns(self) -> None:
         result = resolve((match(Category.UI_MISC, MatchStrength.FALLBACK),))

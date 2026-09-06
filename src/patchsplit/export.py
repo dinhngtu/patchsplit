@@ -7,14 +7,33 @@ from pathlib import Path
 
 import pygit2
 
-from .inventory import Inventory, InventoryItem
+from .categories import PATCH_SERIES_ORDER, Category
+from .inventory import Inventory
 from .model import ChangeUnit
 
 
-def _label(item: InventoryItem) -> str:
-    if item.resolution.owner is not None:
-        return item.resolution.owner.value
-    return "mixed" if item.resolution.mixed else "unresolved"
+def _ordered_labels(labels: list[Category]) -> list[Category]:
+    """Order present labels according to the canonical category policy."""
+
+    positions = {label: index for index, label in enumerate(PATCH_SERIES_ORDER)}
+    missing = set(labels).difference(positions)
+    if missing:
+        formatted = ", ".join(sorted(missing))
+        raise ValueError(f"labels missing from PATCH_SERIES_ORDER: {formatted}")
+    return sorted(labels, key=positions.__getitem__)
+
+
+def _mail_prologue(label: Category, number: int, total: int) -> bytes:
+    width = max(2, len(str(total)))
+    sequence = f"{number:0{width}d}/{total:0{width}d}"
+    return (
+        f"From {'0' * 40} Mon Sep 17 00:00:00 2001\n"
+        "From: patchsplit <patchsplit@localhost>\n"
+        "Date: Thu, 1 Jan 1970 00:00:00 +0000\n"
+        f"Subject: [PATCH {sequence}] {label.value}\n"
+        "\n"
+        "---\n"
+    ).encode()
 
 
 def _blob_bytes(repo: pygit2.Repository, oid: str) -> bytes:
@@ -34,8 +53,8 @@ def _hunk_start(change: ChangeUnit) -> int:
 
 def _snapshot(
     base: bytes,
-    changes: list[tuple[ChangeUnit, str]],
-    included: set[str],
+    changes: list[tuple[ChangeUnit, Category]],
+    included: set[Category],
 ) -> bytes:
     base_lines = base.splitlines(keepends=True)
     result: list[bytes] = []
@@ -64,8 +83,8 @@ def _snapshot(
 
 def _exists(
     status: str,
-    changes: list[tuple[ChangeUnit, str]],
-    included: set[str],
+    changes: list[tuple[ChangeUnit, Category]],
+    included: set[Category],
 ) -> bool:
     selected = sum(label in included for _, label in changes)
     if status == "A":
@@ -131,13 +150,14 @@ def write_patch_series(inventory: Inventory, output: str | Path) -> tuple[Path, 
     destination.mkdir(parents=True, exist_ok=True)
     repo = pygit2.Repository(inventory.repository)
 
-    by_path: dict[str, list[tuple[ChangeUnit, str]]] = defaultdict(list)
-    labels: list[str] = []
+    by_path: dict[str, list[tuple[ChangeUnit, Category]]] = defaultdict(list)
+    labels: list[Category] = []
     for item in inventory.items:
-        label = _label(item)
+        label = item.resolution.patch_category
         by_path[item.change.path].append((item.change, label))
         if label not in labels:
             labels.append(label)
+    labels = _ordered_labels(labels)
 
     bases = {
         path: _blob_bytes(repo, changes[0][0].old_blob_id) for path, changes in by_path.items()
@@ -154,10 +174,11 @@ def write_patch_series(inventory: Inventory, output: str | Path) -> tuple[Path, 
             raise ValueError(f"reconstructed content does not match target blob for {path}")
 
     written: list[Path] = []
-    included: set[str] = set()
+    included: set[Category] = set()
+    total = len(labels)
     for number, label in enumerate(labels, 1):
         next_included = included | {label}
-        patch = bytearray()
+        patch = bytearray(_mail_prologue(label, number, total))
         for path, changes in by_path.items():
             if not any(change_label == label for _, change_label in changes):
                 continue
@@ -174,7 +195,7 @@ def write_patch_series(inventory: Inventory, output: str | Path) -> tuple[Path, 
                 )
             )
 
-        safe_label = re.sub(r"[^A-Za-z0-9._-]+", "-", label).strip("-") or "patch"
+        safe_label = re.sub(r"[^A-Za-z0-9._-]+", "-", label.value).strip("-") or "patch"
         path = destination / f"{number:04d}-{safe_label}.patch"
         path.write_bytes(bytes(patch))
         written.append(path)

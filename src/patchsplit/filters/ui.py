@@ -8,13 +8,28 @@ from ..categories import Category, MatchStrength
 from ..model import ChangeUnit, Evidence
 from .base import ChangeFilter, evidence
 
+_HISTORY_PATTERN = (
+    r"Want(?:Arc|Path|Copy|Folder)History|"
+    r"(?:Arc|Path|Copy|Folder)History|"
+    r"SETTINGS_WANT_(?:ARC|PATH|COPY|FOLDER)_HISTORY"
+)
+_LOWERCASE_HASH_PATTERN = r"WantLowercaseHashes|LowercaseHashes|LOWERCASE_HASH|lowercase\s+hash"
+
+
+def _compile_patterns(spec: str | tuple[str, ...]) -> tuple[re.Pattern[str], ...]:
+    patterns = (spec,) if isinstance(spec, str) else spec
+    return tuple(re.compile(pattern, re.IGNORECASE) for pattern in patterns)
+
 
 @dataclass(frozen=True)
 class UiRule:
     category: Category
-    pattern: re.Pattern[str]
+    patterns: tuple[re.Pattern[str], ...]
     strength: MatchStrength
     reason: str
+
+    def matches(self, text: str) -> bool:
+        return all(pattern.search(text) for pattern in self.patterns)
 
 
 class UiPurposeFilter(ChangeFilter):
@@ -30,6 +45,12 @@ class UiPurposeFilter(ChangeFilter):
     def __init__(self) -> None:
         specs = (
             (
+                Category.UI_SETTINGS,
+                (_HISTORY_PATTERN, _LOWERCASE_HASH_PATTERN),
+                MatchStrength.EXACT,
+                "multiple file-manager settings changed together",
+            ),
+            (
                 Category.UI_DARK_MODE,
                 r"ZIP7_DARKMODE|dmlib::|Darkmodelib|ColorMode|_clrMode",
                 MatchStrength.STRONG,
@@ -37,13 +58,13 @@ class UiPurposeFilter(ChangeFilter):
             ),
             (
                 Category.UI_HISTORY_SETTINGS,
-                r"Want(?:Arc|Path|Copy|Folder)History|(?:Arc|Path|Copy|Folder)History|SETTINGS_WANT_(?:ARC|PATH|COPY|FOLDER)_HISTORY",
+                _HISTORY_PATTERN,
                 MatchStrength.STRONG,
                 "history preference identifier",
             ),
             (
                 Category.UI_LOWERCASE_HASHES,
-                r"WantLowercaseHashes|LowercaseHashes|LOWERCASE_HASH|lowercase\s+hash",
+                _LOWERCASE_HASH_PATTERN,
                 MatchStrength.STRONG,
                 "hash case preference",
             ),
@@ -70,12 +91,6 @@ class UiPurposeFilter(ChangeFilter):
                 r"LoadAndUpdateFormatByMethod|ComprMethodChanged|FindRegistryFormat|fo\.Method|GetMethodSpec",
                 MatchStrength.STRONG,
                 "per-method option persistence",
-            ),
-            (
-                Category.UI_ZS_BRANDING,
-                r"7-Zip ZS|7-Zip-Zstandard|SevenZipZS|k_7zip_GUID_Data2_ZS|MY_AUTHOR_NAME|MY_VERSION_(?:NUMBERS|COPYRIGHT_DATE)",
-                MatchStrength.STRONG,
-                "ZS product identity",
             ),
             (
                 Category.UI_OPEN_TARGET_FOLDER,
@@ -109,8 +124,13 @@ class UiPurposeFilter(ChangeFilter):
             ),
         )
         self.rules = tuple(
-            UiRule(category, re.compile(pattern, re.IGNORECASE), strength, reason)
-            for category, pattern, strength, reason in specs
+            UiRule(
+                category,
+                _compile_patterns(pattern_spec),
+                strength,
+                reason,
+            )
+            for category, pattern_spec, strength, reason in specs
         )
 
     def classify(self, change: ChangeUnit) -> Iterable[Evidence]:
@@ -118,7 +138,7 @@ class UiPurposeFilter(ChangeFilter):
             return
         text = change.searchable_text
         for rule in self.rules:
-            if rule.pattern.search(text):
+            if rule.matches(text):
                 yield evidence(self, rule.category, rule.strength, rule.reason)
 
 

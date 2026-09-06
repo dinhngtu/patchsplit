@@ -19,7 +19,7 @@ git -C ..\7zip add .
 ## Running the tool
 
 ```powershell
-uv run patchsplit --repository ..\7zip
+uv run patchsplit -C ..\7zip
 ```
 
 The first JSONL record contains run metadata. Each later record represents one
@@ -37,7 +37,7 @@ Use `--patch-dir` to materialize the classified hunks as contextual Git
 patches:
 
 ```powershell
-uv run patchsplit -C ..\7zip --patch-dir ..\7zpatches
+uv run patchsplit -C ..\7zip --output series.jsonl --patch-dir patches
 ```
 
 The directory contains numbered `.patch` files and a `series` file specifying
@@ -48,16 +48,18 @@ Apply the series from the target repository:
 
 ```powershell
 git -C ..\7zip reset --hard 26.03
-Get-Content ..\7zpatches\series | ForEach-Object {
-  $patch = Get-ChildItem (Join-Path ..\7zpatches $_)
-  git -C ..\7zip apply $patch
-  if ($LASTEXITCODE -ne 0) {throw}
-  git -C ..\7zip add .
-  if ($LASTEXITCODE -ne 0) {throw}
-  git -C ..\7zip commit -m $patch.BaseName
+Get-Content ..\patchsplit\patches\series | ForEach-Object {
+  $patch = Get-ChildItem (Join-Path ..\patchsplit\patches $_)
+  git -C ..\7zip am $patch
   if ($LASTEXITCODE -ne 0) {throw}
 }
 ```
+
+Category declaration order in `categories.py` is the patch-series order;
+`PATCH_SERIES_ORDER` is generated directly from the enum. The `unresolved`,
+`cleanup.whitespace-only`, and `mixed` categories are last.
+Every generated patch has a deterministic mail prologue and a numbered subject
+suitable for `git am`.
 
 Mixed and unresolved hunks are preserved whole in correspondingly named
 patches rather than being omitted.

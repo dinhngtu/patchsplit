@@ -123,6 +123,12 @@ class Resolution:
     candidates: tuple[Candidate, ...]
     mixed: bool
 
+    @property
+    def patch_category(self) -> Category:
+        if self.owner is not None:
+            return self.owner
+        return Category.MIXED if self.mixed else Category.UNRESOLVED
+
 
 def exact_bytes_hash(parts: Iterable[bytes]) -> str:
     digest = sha256()
