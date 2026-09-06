@@ -45,14 +45,14 @@ class Inventory:
 def build_inventory(
     repository: str | Path,
     *,
+    patch_file: str | Path,
     base: str = "HEAD",
     filters: FilterSet | None = None,
     path_prefixes: tuple[str, ...] = (),
-    source: str = "index",
 ) -> Inventory:
     repo = pygit2.Repository(str(repository))
     active_filters = filters or FilterSet(builtin_filters())
-    collection = collect_patches(repo, base, source=source)
+    collection = collect_patches(repo, patch_file, base)
     items_list: list[InventoryItem] = []
     for change in iter_units(collection.patches, path_prefixes=path_prefixes):
         resolution = resolve(active_filters.classify(change))

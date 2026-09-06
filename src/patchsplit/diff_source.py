@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import os
 import re
+import subprocess
+import tempfile
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
+from pathlib import Path
 
 import pygit2
 
@@ -11,7 +15,7 @@ from .model import ChangeLine, ChangeUnit
 _SECTION_RE = re.compile(r"^@@ .*? @@(?P<section>.*)$")
 
 
-class IncompleteIndexError(RuntimeError):
+class PatchApplyError(RuntimeError):
     pass
 
 
@@ -147,43 +151,57 @@ def _to_units(patch: pygit2.Patch) -> Iterator[ChangeUnit]:
 
 def collect_patches(
     repo: pygit2.Repository,
+    patch_file: str | Path,
     base: str = "HEAD",
-    *,
-    source: str = "index",
 ) -> PatchCollection:
-    """Collect the base-to-index or base-to-worktree diff.
+    """Apply a patch to a temporary index initialized from ``base``.
 
-    The index source is intentionally the default. It gives libgit2 one
-    complete tree-like side and excludes the splitter's own untracked files.
-    Intent-to-add entries are rejected because their index blobs are empty.
+    The repository's real index and working tree are not read as diff inputs
+    and are not changed.
     """
 
-    if source not in {"index", "worktree"}:
-        raise ValueError(f"unknown source {source!r}")
+    patch_path = Path(patch_file).resolve()
+    if not patch_path.is_file():
+        raise FileNotFoundError(f"patch file does not exist: {patch_path}")
 
-    status = repo.status()
-    intent_to_add = sorted(
-        path
-        for path, flags in status.items()
-        if flags & pygit2.GIT_STATUS_INDEX_NEW and flags & pygit2.GIT_STATUS_WT_MODIFIED
-    )
-    if intent_to_add:
-        sample = ", ".join(intent_to_add[:5])
-        remainder = len(intent_to_add) - 5
-        suffix = f" (and {remainder} more)" if remainder > 0 else ""
-        raise IncompleteIndexError(
-            f"{len(intent_to_add)} intent-to-add entries have empty index blobs: "
-            f"{sample}{suffix}. Fully stage the fork patch before inventorying it."
+    base_tree = repo.revparse_single(base).peel(pygit2.Tree)
+    with tempfile.TemporaryDirectory(prefix="patchsplit-") as directory:
+        index_path = Path(directory) / "index"
+        index = pygit2.Index(index_path)
+        index.read_tree(base_tree)
+        index.write()
+
+        environment = os.environ.copy()
+        environment["GIT_INDEX_FILE"] = str(index_path)
+        workdir = repo.workdir
+        command = [
+            "git",
+            "--git-dir",
+            repo.path,
+            *(["--work-tree", workdir] if workdir else []),
+            "apply",
+            "--cached",
+            "--whitespace=nowarn",
+            str(patch_path),
+        ]
+        result = subprocess.run(
+            command,
+            env=environment,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
         )
+        if result.returncode:
+            detail = result.stderr.strip() or result.stdout.strip() or "git apply failed"
+            raise PatchApplyError(f"could not apply {patch_path} to {base}: {detail}")
 
-    diff = repo.diff(
-        base,
-        cached=(source == "index"),
-        context_lines=0,
-        interhunk_lines=0,
-    )
-    patches = tuple(patch for patch in diff if patch is not None)
-    return PatchCollection(diff=diff, patches=patches)
+        # git apply replaces the on-disk index, so reload it before diffing.
+        index = pygit2.Index(index_path)
+        diff = base_tree.diff_to_index(index, context_lines=0, interhunk_lines=0)
+        patches = tuple(patch for patch in diff if patch is not None)
+        return PatchCollection(diff=diff, patches=patches)
 
 
 def iter_units(

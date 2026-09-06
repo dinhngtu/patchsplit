@@ -73,9 +73,20 @@ class PatchExportTests(unittest.TestCase):
             source.write_bytes(target)
             repo.index.add("sample.txt")
             repo.index.write()
+            input_patch = root / "input.patch"
+            input_patch.write_bytes(
+                subprocess.run(
+                    ["git", "diff", "--cached", "--binary", "--full-index"],
+                    cwd=root,
+                    check=True,
+                    capture_output=True,
+                ).stdout
+            )
+            repo.reset(commit, pygit2.GIT_RESET_HARD)  # type: ignore
 
             inventory = build_inventory(
                 root,
+                patch_file=input_patch,
                 filters=FilterSet((PurposeFilter(),)),
             )
             output = root / "patches"
@@ -128,8 +139,22 @@ class PatchExportTests(unittest.TestCase):
             repo.index.remove("Xxh64Reg.cpp")
             repo.index.add("XXH64Reg.cpp")
             repo.index.write()
+            input_patch = root / "input.patch"
+            input_patch.write_bytes(
+                subprocess.run(
+                    ["git", "diff", "--cached", "--binary", "--full-index"],
+                    cwd=root,
+                    check=True,
+                    capture_output=True,
+                ).stdout
+            )
+            repo.reset(commit, pygit2.GIT_RESET_HARD)  # type: ignore
 
-            inventory = build_inventory(root, filters=FilterSet((PurposeFilter(),)))
+            inventory = build_inventory(
+                root,
+                patch_file=input_patch,
+                filters=FilterSet((PurposeFilter(),)),
+            )
             output = root / "patches"
             patches = write_patch_series(inventory, output)
 

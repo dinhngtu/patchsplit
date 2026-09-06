@@ -12,7 +12,7 @@ from .output import write_inventory
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="patchsplit",
-        description="Inventory an applied Git patch with composable purpose filters.",
+        description="Inventory a patch file with composable purpose filters.",
     )
     parser.add_argument(
         "--list-categories",
@@ -27,10 +27,11 @@ def _parser() -> argparse.ArgumentParser:
         help="write an ordered, apply-able patch series to this directory",
     )
     parser.add_argument(
-        "--source",
-        choices=("index", "worktree"),
-        default="index",
-        help="diff source (default: fully staged index)",
+        "--patch",
+        "--patch-file",
+        dest="patch_file",
+        metavar="PATCH_FILE",
+        help="apply this patch to a temporary index initialized from --base",
     )
     parser.add_argument(
         "--path-prefix",
@@ -48,11 +49,14 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = _parser().parse_args(argv)
+    parser = _parser()
+    args = parser.parse_args(argv)
     if args.list_categories:
         for category in Category:
             print(category.value)
         return 0
+    if args.patch_file is None:
+        parser.error("--patch is required")
 
     filters = list(builtin_filters())
     for module_name in args.filter_module:
@@ -63,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
         base=args.base,
         filters=FilterSet(tuple(filters)),
         path_prefixes=tuple(args.path_prefix),
-        source=args.source,
+        patch_file=args.patch_file,
     )
     exported = ()
     if args.output is not None:

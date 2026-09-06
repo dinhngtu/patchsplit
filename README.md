@@ -1,33 +1,25 @@
 # patchsplit
 
-`patchsplit` inventories an already-applied Git patch using pygit2 and assigns
-candidate component categories through composable filters. It does not modify
-the working tree or index.
+`patchsplit` inventories a Git patch file using pygit2 and assigns candidate
+component categories through composable filters. It applies the patch to a
+temporary index and does not modify the working tree or real index.
 
-The default source is the staged index. Stage the fork patch completely before
-running the tool; intent-to-add placeholders do not contain blobs that pygit2
-can classify.
-
-## Generating and applying patches
+## Generating a patch
 
 ```powershell
 git -C ..\7-zip-zstd diff --binary --full-index --no-ext-diff --output=7zzs.patch 2e90379671c9..adb9ceeecd0c -- Asm C CPP
-git -C ..\7zip am --abort; git -C ..\7zip reset --hard 26.03; git -C ..\7zip clean -fxd
-git -C ..\7zip rm -- CPP/Common/Xxh64Reg.cpp
-git -C ..\7zip apply --index --whitespace=nowarn --exclude=CPP/Common/Xxh64Reg.cpp ..\7-zip-zstd\7zzs.patch
 ```
-
-The explicit `git rm` handles the case-only
-`Xxh64Reg.cpp` -> `XXH64Reg.cpp` replacement on case-insensitive filesystems.
-The matching deletion is excluded from `git apply` because it is already
-staged; the patch still creates `CPP/Common/XXH64Reg.cpp` with its intended
-contents.
 
 ## Running the tool
 
 ```powershell
-uv run patchsplit -C ..\7zip
+uv run patchsplit -C ..\7zip --base 26.03 --patch ..\7-zip-zstd\7zzs.patch
 ```
+
+`--patch` (also accepted as `--patch-file`) is required. The temporary index is
+initialized from `--base`, so the patch must apply to that revision. Applying
+it may add blobs to Git's object database, but it does not update refs, the real
+index, or checked-out files.
 
 The first JSONL record contains run metadata. Each later record represents one
 zero-context libgit2 hunk. It includes the resolved owner, every candidate and
@@ -44,7 +36,7 @@ Use `--patch-dir` to materialize the classified hunks as contextual Git
 patches:
 
 ```powershell
-uv run patchsplit -C ..\7zip --output series.jsonl --patch-dir patches
+uv run patchsplit -C ..\7zip --base 26.03 --patch ..\7-zip-zstd\7zzs.patch --output series.jsonl --patch-dir patches
 ```
 
 The directory contains numbered `.patch` files and a `series` file specifying

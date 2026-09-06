@@ -1,4 +1,4 @@
-"""Structured, filter-driven decomposition of an applied Git patch."""
+"""Structured, filter-driven decomposition of Git patch files."""
 
 from .categories import Category, MatchStrength
 from .inventory import build_inventory
